@@ -44,7 +44,7 @@ VHL_Chemistry/
 1. **Clone dự án:**
 
    ```bash
-   git clone <repository-url>
+   git clone git@github.com:HieuVo0611/VHL_Chemistry.git
    cd VHL_Chemistry
    ```
 2. **Cài đặt các thư viện: Sử dụng pip để cài đặt các thư viện từ requirements.txt:**
