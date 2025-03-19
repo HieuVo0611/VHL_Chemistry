@@ -24,21 +24,21 @@ VHL_Chemistry là một dự án AI được thiết kế để phân tích dữ
    - Huấn luyện mô hình XGBoost để dự đoán nồng độ ENR và CIP từ dữ liệu.
 
 ## Cấu trúc dự án
-
+```bash
 VHL_Chemistry/
 ├── src/
 │	├── pb/
-│	│	├── pb_model.ipynb 			# Huấn luyện và dự đoán dữ liệu Pb
-│	│	├── pb_processing_data.ipynb 	# Xử lý dữ liệu Pb từ tệp .swp
-│	├── cip_enr/
-│		├── cip_enr_model.py			# Huấn luyện và dự đoán dữ liệu ENR-CIP
+│	│	├── pb_model.ipynb 			   # Huấn luyện và dự đoán dữ liệu Pb
+│	│	└── pb_processing_data.ipynb               # Xử lý dữ liệu Pb từ tệp .swp
+│	└── cip_enr/
+│		└── cip_enr_model.py			   # Huấn luyện và dự đoán dữ liệu ENR-CIP
 ├── data/
-│	├── pb/ 							# Dữ liệu Pb
-│	├── cip_enr/ 						# Dữ liệu ENR-CIP
-├── README.md	 					# Tài liệu dự án
-├── LICENSE 						# Giấy phép sử dụng
-├── requirements.txt 					# Danh sách các thư viện cần thiết
-
+│	├── pb/ 			               	   # Dữ liệu Pb
+│	└── cip_enr/ 					   # Dữ liệu ENR-CIP
+├── README.md	 				      	   # Tài liệu dự án
+├── LICENSE 					      	   # Giấy phép sử dụng
+└──requirements.txt 				   	   # Danh sách các thư viện cần thiết
+```
 ## Cài đặt
 
 1. **Clone dự án:**
