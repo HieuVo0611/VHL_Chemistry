@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split, KFold
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 
 
@@ -26,6 +27,10 @@ def compute_sample_weights(y):
     freq = np.array([hist[i-1] for i in bin_idx])
     weights = 1 / (freq + 1e-6)
     return weights
+
+
+def relative_mae(y_true, y_pred):
+    return np.mean(np.abs(y_true - y_pred) / (np.abs(y_true) + 1e-8))
 
 
 def main():
@@ -54,6 +59,15 @@ def main():
     X_trainval = pd.concat([X_train, X_val], axis=0).reset_index(drop=True)
     y_trainval = pd.concat([y_train, y_val], axis=0).reset_index(drop=True)
 
+    # Log-transform label
+    y_trainval_log = np.log1p(y_trainval)
+    y_test_log = np.log1p(y_test)
+
+    # Chuẩn hóa dữ liệu
+    scaler = StandardScaler()
+    X_trainval_scaled = scaler.fit_transform(X_trainval)
+    X_test_scaled = scaler.transform(X_test)
+
     # Các model và thông số
     model_configs = [
         ('random_forest', dict(n_estimators=500, max_depth=20, min_samples_split=4, min_samples_leaf=2, max_features='sqrt', bootstrap=True)),
@@ -80,6 +94,9 @@ def main():
     results = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     for model_type, params in model_configs:
+        # Thêm max_iter cho các model cần thiết
+        if model_type in ['elasticnet', 'sgd', 'huber']:
+            params['max_iter'] = 5000
         for target in ['Pb', 'Cd']:
             model_filename = f'{model_type}_{target}_{timestamp}.pkl'
             model_save_path = os.path.join(MODEL_SAVE_PATH, model_filename)
@@ -93,13 +110,14 @@ def main():
                     continue
 
             print(f"Training {model_type} for {target}...")
-            y_target = y_trainval[target]
+            # Dùng label đã log-transform
+            y_target_log = y_trainval_log[target]
             # KFold CV
             kf = KFold(n_splits=5, shuffle=True, random_state=42)
             fold_metrics = []
-            for fold, (train_idx, val_idx) in enumerate(kf.split(X_trainval)):
-                X_tr, X_val = X_trainval.iloc[train_idx], X_trainval.iloc[val_idx]
-                y_tr, y_val = y_target.iloc[train_idx], y_target.iloc[val_idx]
+            for fold, (train_idx, val_idx) in enumerate(kf.split(X_trainval_scaled)):
+                X_tr, X_val = X_trainval_scaled[train_idx], X_trainval_scaled[val_idx]
+                y_tr, y_val = y_target_log.iloc[train_idx], y_target_log.iloc[val_idx]
                 sample_weight = compute_sample_weights(y_tr.values)
                 model = train_model(
                     X=X_tr, y=y_tr, model_save_path=None, model_type=model_type, **params
@@ -109,29 +127,40 @@ def main():
                 except TypeError:
                     model.fit(X_tr, y_tr)
                 y_pred = model.predict(X_val)
-                mae = mean_absolute_error(y_val, y_pred)
-                mse = mean_squared_error(y_val, y_pred)
-                r2 = r2_score(y_val, y_pred)
-                fold_metrics.append((mae, mse, r2))
+                # Đánh giá trên scale log, hoặc chuyển về scale gốc để đánh giá
+                y_pred_inv = np.expm1(y_pred)
+                y_val_inv = np.expm1(y_val)
+                mae = mean_absolute_error(y_val_inv, y_pred_inv)
+                mse = mean_squared_error(y_val_inv, y_pred_inv)
+                r2 = r2_score(y_val_inv, y_pred_inv)
+                relmae = relative_mae(y_val_inv, y_pred_inv)
+                fold_metrics.append((mae, mse, r2, relmae))
             # Train lại trên toàn bộ train+val để lưu model cuối cùng
-            model_save_path = os.path.join(MODEL_SAVE_PATH, f'{model_type}_{target}_{timestamp}.pkl')
             final_model = train_model(
-                X=X_trainval, y=y_target, model_save_path=model_save_path, model_type=model_type, **params
+                X=X_trainval_scaled, y=y_target_log, model_save_path=model_save_path, model_type=model_type, **params
             )
             # Đánh giá trên test set
-            y_test_target = y_test[target]
-            y_test_pred = final_model.predict(X_test)
-            test_mae = mean_absolute_error(y_test_target, y_test_pred)
-            test_mse = mean_squared_error(y_test_target, y_test_pred)
-            test_r2 = r2_score(y_test_target, y_test_pred)
-            mean_mae, mean_mse, mean_r2 = np.mean(fold_metrics, axis=0)
+            y_test_pred_log = final_model.predict(X_test_scaled)
+            if np.any(np.isnan(y_test_pred_log)) or np.any(np.isinf(y_test_pred_log)):
+                print(f"Warning: Model {model_type} for {target} returned NaN or Inf predictions.")
+                continue
+            y_test_pred = np.expm1(y_test_pred_log)
+            y_test_true = np.expm1(y_test_log[target])
+            test_mae = mean_absolute_error(y_test_true, y_test_pred)
+            test_mse = mean_squared_error(y_test_true, y_test_pred)
+            test_r2 = r2_score(y_test_true, y_test_pred)
+            test_relmae = relative_mae(y_test_true, y_test_pred)
+            mean_mae, mean_mse, mean_r2, mean_relmae = np.mean(fold_metrics, axis=0)
             results.append([
                 f"{model_type}_{target}_{timestamp}", 'metadata_pb_cd.csv',
-                mean_mae, mean_mse, mean_r2, test_mae, test_mse, test_r2
+                mean_mae, mean_mse, mean_r2, mean_relmae, test_mae, test_mse, test_r2, test_relmae
             ])
+            if np.any(np.isnan(y_test_pred)) or np.any(np.isinf(y_test_pred)):
+                print(f"Warning: Model {model_type} for {target} returned NaN or Inf predictions.")
+                continue
 
     # Ghi kết quả ra file csv
-    results_df = pd.DataFrame(results, columns=['Model', 'Data', 'CV_MAE', 'CV_MSE', 'CV_R2', 'Test_MAE', 'Test_MSE', 'Test_R2'])
+    results_df = pd.DataFrame(results, columns=['Model', 'Data', 'CV_MAE', 'CV_MSE', 'CV_R2', 'CV_RelMAE', 'Test_MAE', 'Test_MSE', 'Test_R2', 'Test_RelMAE'])
     results_path = os.path.join(PROCESSED_DATA_DIR, 'train_results.csv')
     results_df.to_csv(results_path, index=False)
     print("Training & evaluation completed. Results saved to", results_path)

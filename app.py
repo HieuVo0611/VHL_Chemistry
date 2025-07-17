@@ -52,7 +52,7 @@ def main():
         model_path = os.path.join(MODEL_SAVE_PATH, model_file)
         model = load_model(model_path)
         pred = predict_sample(model, list(features.values()))
-        st.success(f"Prediction: {pred}")
+        st.success(f"Prediction: {pred:.4f}")
 
 if __name__ == "__main__":
     main()
