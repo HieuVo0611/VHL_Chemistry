@@ -5,12 +5,16 @@ from src.models.train_model import train_model
 from src.config import *
 import pandas as pd
 import os
+import numpy as np
 from datetime import datetime
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import StandardScaler
-import numpy as np
+from scipy.signal import savgol_filter
 
+def preprocess_spectra(df):
+    df['Y'] = savgol_filter(df['Y'], window_length=11, polyorder=2)
+    return df
 
 def evaluate_model(model, X_test, y_test):
     y_pred = model.predict(X_test)
@@ -18,7 +22,6 @@ def evaluate_model(model, X_test, y_test):
     mse = mean_squared_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
     return mae, mse, r2
-
 
 def compute_sample_weights(y):
     # y là 1D array (Pb hoặc Cd)
@@ -38,9 +41,16 @@ def main():
 
     folder_path = os.path.join(PROCESSED_DATA_DIR, 'metadata_pb_cd.csv')
     df = pd.read_csv(folder_path)
+
+    # Chọn các cột số để xử lý NaN và Inf
+    numeric_cols = ['X', 'Y', 'Pb', 'Cd']
+    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')  # Chuyển đổi sang số, nếu có lỗi thì thành NaN
+    df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean()).clip(lower=-1e6, upper=1e6)
+
     # Group theo Filenames để lấy từng sample
     data_list = []
     labels_list = []
+
     for sample, group in df.groupby('Filenames'):
         sample_df = group[['X', 'Y']]
         data_list.append(sample_df)
@@ -49,7 +59,11 @@ def main():
         labels_list.append([pb_label, cd_label])
 
     padded_list = pad_dataset(data_list)
+
     features_df = extract_features_dataset(padded_list)
+
+    # Kiểm tra features_df
+    features_df = features_df.fillna(0).clip(lower=-1e6, upper=1e6)
     labels_df = pd.DataFrame(labels_list, columns=['Pb', 'Cd'])
 
     # Chia train/val/test 6:2:2
